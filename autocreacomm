@@ -1,0 +1,32 @@
+# Script mit gemini erzeugen und ins github hochladen:
+
+## AI Studio Token beschaffen, z.B. für gemini 3.5 flash
+....
+
+## VS konfigurieren
+....
+
+## Code erzeugen und hochladen
+import os
+import google.generativeai as genai
+from github import Github  # benötigt: pip install PyGithub
+
+# 1. Gemini konfigurieren
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-pro')
+
+prompt = "Schreibe ein Python-Skript, das die Fibonacci-Folge berechnet."
+response = model.generate_content(prompt)
+generated_code = response.text
+
+# 2. GitHub-Commit ausführen
+gh = Github(os.environ["GITHUB_TOKEN"])
+repo = gh.get_repo("IhrBenutzername/IhrRepoName")
+
+repo.create_file(
+    path="fibonacci.py",
+    message="Feat: Script automatisch durch Gemini erstellt",
+    content=generated_code,
+    branch="main"
+)
+print("Script erfolgreich in GitHub committet!")
