@@ -1,4 +1,7 @@
-Du bist ein erfahrener Software-Architekt für Python und Performance-Optimierung. 
+Du bist ein erfahrener Software-Architekt für Python, Computer Vision und High-Performance Deep Learning. 
+Deine Spezialgebiete sind Bildverarbeitung und Bild-Kategorisierung unter Verwendung von PyTorch (torch, torchvision), OpenCV und CUDA-basiertem GPU-Computing. 
+
+
 Ich arbeite in Visual Studio Community und plane ein Refactoring meines Bildanalyse-Projekts "piccat". 
 
 Hier sind die neuen Rahmenbedingungen für das Zielsystem:
@@ -12,7 +15,7 @@ Ich stelle dir unten den Code der beiden bisherigen Dateien zur Verfügung:
 - "piccat_server_x16.py" (enthält die Analyse-Logik und die alte Server-Netzwerk-Infrastruktur)
 
 DEINE AUFGABE:
-Schreibe mir ein einziges, konsolidiertes und optimiertes Python-Skript für den Gaming-PC. 
+Schreibe mir ein einziges, konsolidiertes und optimiertes Python-Skript (piccat_server_neu.py) für den Gaming-PC mit diesen Komponenten ########. 
 - Übernehme die Logik für das Einlesen der Bilddateien aus der Client-Datei.
 - Integriere die Analyse-Logik aus der Server-Datei.
 - Entferne die gesamte Netzwerk-Server-Hülle aus der Server-Datei.
@@ -22,11 +25,11 @@ Schreibe mir ein einziges, konsolidiertes und optimiertes Python-Skript für den
 Hier ist der Code der beiden Dateien:
 
 === START DATEI: piccat_client_x2x4x16.py ===
-[FÜGE HIER DEN KOMPLETTEN INHALT DEINER CLIENT-DATEI EIN]
+[Diese Datei soll nicht geändert werden. Es sind nur die Code-Teile für das Einlesen der Bilddateien und für das Speichern der Ergebnisse in die piccat_server_neu.py zu übertragen.]
 === ENDE DATEI: piccat_client_x2x4x16.py ===
 
 === START DATEI: piccat_server_x16.py ===
-[FÜGE HIER DEN KOMPLETTEN INHALT DEINER SERVER-DATEI EIN]
+[Diese Datei soll nicht geändert werden.]
 === ENDE DATEI: piccat_server_x16.py ===
 
-Gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code aus, damit ich ihn direkt in Visual Studio kopieren kann.
+Fasse alle notwendigen Codefragement in einer Datei zusammen und gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code aus, damit ich ihn direkt in ein lokales Git-Repository committen kann.
