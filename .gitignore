@@ -1,0 +1,21 @@
+# Visual Studio Systemordner und Cache
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Python Caches und temporäre Dateien
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+ENV/
+
+# Lokale Datenbanken aus Ihrem Repo (CodeChunts etc.)
+*.db
+*.db-shm
+*.db-wal
