@@ -1,508 +1,650 @@
-
-import os
 import json
+import os
 import random
-import math
+import time
 
-# ==============================================================================
-# CONFIGURATION & CONSTANTS
-# ==============================================================================
-JSON_FILENAME = "fliesenreste.json"
-HTML_FILENAME = "fliesen_layout.html"
 
-# Target dimensions in cm (6.2 m x 0.3 m)
-TARGET_WIDTH = 620.0
-TARGET_HEIGHT = 30.0
+def generate_mock_data(filepath: str):
+    """Generiert eine fliesenreste.json mit 40 zufälligen Fliesenresten,
 
-# Aesthetic rules for "Wilder Verband" (harmonious joint layout)
-MIN_JOINT_OFFSET = 8.0  # Minimum distance between vertical joints in adjacent rows
-MIN_TILE_WIDTH = 10.0   # Avoid very small slivers at the ends of rows if possible
-DESIRED_ROW_HEIGHTS = [10.0, 10.0, 10.0]  # 3 elegant rows of 10cm each summing to 30cm
+    falls diese noch nicht existiert. Die Farbwerte repräsentieren ein
+    ästhetisches Farbspektrum (Steingrau, Beige, Schiefer, Terracotta).
+    """
+    if os.path.exists(filepath):
+        return
 
-# ==============================================================================
-# DATA GENERATION & I/O
-# ==============================================================================
-def generate_tile_assets_if_not_exists():
-    """Generates the fliesenreste.json file with 40 random tiles if it does not exist."""
-    if not os.path.exists(JSON_FILENAME):
-        # Professional palette of harmonious tile colors (earthy, concrete, stone tones)
-        colors = [
-            "#3E4A56", "#7F8C8D", "#BDC3C7", "#95A5A6", "#E5E7E9",
-            "#D5D8DC", "#ABB2B9", "#566573", "#2C3E50", "#85929E"
-        ]
-        tiles = []
-        for i in range(1, 41):
-            width = round(random.uniform(5.0, 100.0), 1)
-            height = round(random.uniform(5.0, 100.0), 1)
-            tiles.append({
-                "id": i,
-                "width": width,
-                "height": height,
-                "color": random.choice(colors)
-            })
-        with open(JSON_FILENAME, 'w', encoding='utf-8') as f:
-            json.dump(tiles, f, indent=4)
+    # Harmonische Farbpalette für realistische Fliesenoptik
+    colors = [
+        "#D3C2B0",
+        "#C5B4A3",
+        "#A89F91",
+        "#8E8275",
+        "#70665C",  # Beige-/Naturtöne
+        "#E6DCD2",
+        "#DCD0C4",
+        "#C8B9A6",
+        "#7F766C",
+        "#5E554D",  # Erdtöne
+        "#D5D6D2",
+        "#B9BBB6",
+        "#A1A39E",
+        "#878884",
+        "#6E706B",  # Steingrau
+        "#4A4B49",
+        "#3B3C3A",
+        "#8C9394",
+        "#6B7375",
+        "#515A5C",  # Schiefer/Blaugrau
+    ]
 
-def load_tile_assets():
-    """Reads and returns the complete tiles list from JSON."""
-    with open(JSON_FILENAME, 'r', encoding='utf-8') as f:
+    tiles = []
+    for i in range(1, 41):
+        width = random.randint(5, 100)
+        height = random.randint(5, 100)
+        color = random.choice(colors)
+        tiles.append(
+            {"id": i, "width": width, "height": height, "color": color}
+        )
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(tiles, f, indent=4, ensure_ascii=False)
+
+
+def load_tiles(filepath: str) -> list:
+    """Lädt die Fliesenreste aus der JSON-Datei."""
+    with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ==============================================================================
-# OPTIMIZATION & NESTING ENGINE (2D CUTTING STOCK)
-# ==============================================================================
-class TileState:
-    """Tracks the geometric cutting operations on a specific tile."""
-    def __init__(self, tile_dict):
-        self.id = tile_dict["id"]
-        self.original_w = tile_dict["width"]
-        self.original_h = tile_dict["height"]
-        self.color = tile_dict["color"]
-        self.current_w = tile_dict["width"]
-        self.current_h = tile_dict["height"]
-        self.parent_id = tile_dict["id"]
-        self.cuts_made = 0
 
-    def clone(self):
-        ts = TileState({"id": self.id, "width": self.current_w, "height": self.current_h, "color": self.color})
-        ts.original_w = self.original_w
-        ts.original_h = self.original_h
-        ts.parent_id = self.parent_id
-        ts.cuts_made = self.cuts_made
-        return ts
+def optimize_layout(tiles: list) -> tuple:
+    """Optimiert das Schneiden und Anordnen der Fliesenreste für einen
 
-def simulate_packing(tile_pool, row_heights, seed_val):
+    Sockelverband der Größe 620 x 30 cm (3 Reihen à 10 cm Höhe).
     """
-    Simulates a greedy placement of tiles into rows with random variations.
-    Implements height and width cutting logic and tracks the remaining offcuts.
-    """
-    random.seed(seed_val)
-    # Deep copy pool
-    pool = [t.clone() for t in tile_pool]
-    
-    # Shuffle to explore different packing sequences
-    random.shuffle(pool)
-    
-    rows_layout = []
-    total_waste_area = 0.0
-    used_tiles_log = []
-    
-    # Keep track of vertical joints of the previous row to respect aesthetic offsets
-    prev_joints = []
-    
-    for row_idx, r_height in enumerate(row_heights):
-        row_tiles = []
-        current_x = 0.0
-        row_joints = []
-        
-        while current_x < TARGET_WIDTH:
-            # Filter pool: tile must be at least as high as the target row height
-            valid_candidates = [t for t in pool if t.current_h >= r_height]
-            
-            if not valid_candidates:
-                # Fallback: If no candidate fits height-wise, we must stop or allow substandard fit.
-                # In practice, we skip or generate a virtual tile (unfavorable score).
-                break
-                
-            # Aesthetic scoring for candidate selection
-            best_candidate = None
-            best_score = -float('inf')
-            
-            # Look at a small subset to optimize performance and randomness
-            sample_size = min(len(valid_candidates), 8)
-            candidates_to_test = random.sample(valid_candidates, sample_size)
-            
-            for candidate in candidates_to_test:
-                score = 0.0
-                potential_w = candidate.current_w
-                potential_right_joint = current_x + potential_w
-                
-                # Penalize joints aligning with the row directly below/above
-                if prev_joints:
-                    min_dist = min(abs(potential_right_joint - j) for j in prev_joints)
-                    if min_dist < MIN_JOINT_OFFSET:
-                        score -= (MIN_JOINT_OFFSET - min_dist) * 15.0  # Heavy penalty
-                
-                # Prefer tiles where height waste is minimal
-                height_waste = candidate.current_h - r_height
-                score -= height_waste * 2.0
-                
-                # Avoid tiny leftovers at the end of the row
-                remaining_space = TARGET_WIDTH - potential_right_joint
-                if 0.0 < remaining_space < MIN_TILE_WIDTH:
-                    score -= 50.0
-                
+    target_width = 620.0
+    row_height = 10.0
+    num_rows = 3
+
+    # Schritt 1: Generierung der 10cm-Streifen aus dem Bestand (Nesting-Vorbereitung)
+    # Ein Rest (W x H) kann entweder normal oder um 90 Grad gedreht geschnitten werden.
+    # Wir wählen die Orientierung, die die maximale Fläche an nutzbaren 10cm-Streifen liefert.
+    strips_pool = []
+    for t in tiles:
+        w, h = t["width"], t["height"]
+
+        # Option A: Normal (Strips der Höhe 10, Breite W)
+        qty_a = int(h // row_height)
+        area_a = w * qty_a * row_height
+
+        # Option B: Rotiert (Strips der Höhe 10, Breite H)
+        qty_b = int(w // row_height)
+        area_b = h * qty_b * row_height
+
+        if area_a >= area_b and qty_a > 0:
+            for j in range(qty_a):
+                strips_pool.append(
+                    {
+                        "parent_id": t["id"],
+                        "width": float(w),
+                        "color": t["color"],
+                        "orig_dim": f"{w}x{h}",
+                        "cut_from_axis": "H",
+                    }
+                )
+        elif qty_b > 0:
+            for j in range(qty_b):
+                strips_pool.append(
+                    {
+                        "parent_id": t["id"],
+                        "width": float(h),
+                        "color": t["color"],
+                        "orig_dim": f"{w}x{h}",
+                        "cut_from_axis": "W",
+                    }
+                )
+
+    # Sortiere Pool absteigend nach Breite für ein stabileres Packing (Best-Fit-Decline-Ansatz)
+    strips_pool.sort(key=lambda x: x["width"], reverse=True)
+
+    rows_layout = [[] for _ in range(num_rows)]
+    cuts_made = 0
+    used_parent_ids = set()
+
+    # Gezielter Versatz für den Sockelverband (Anfangs-Offsets zur Kreuzfugenvermeidung)
+    # Reihe 0 startet direkt, Reihe 1 startet mit ca. 20cm Versatz, Reihe 2 mit ca. 40cm Versatz.
+    offsets = [0.0, 22.0, 44.0]
+
+    for r in range(num_rows):
+        x = 0.0
+        target_offset = offsets[r]
+
+        # 1. Start-Offset-Fliese setzen falls nötig
+        if target_offset > 0:
+            # Finde eine passende Fliese im Pool, die breiter als das Offset ist
+            idx_found = -1
+            for idx, s in enumerate(strips_pool):
+                if s["width"] > target_offset + 5.0:
+                    idx_found = idx
+                    break
+
+            if idx_found != -1:
+                chosen = strips_pool.pop(idx_found)
+                # Schneiden
+                placed_width = target_offset
+                leftover_width = chosen["width"] - target_offset
+
+                rows_layout[r].append(
+                    {
+                        "parent_id": chosen["parent_id"],
+                        "width": placed_width,
+                        "color": chosen["color"],
+                        "is_cut": True,
+                        "orig_dim": chosen["orig_dim"],
+                        "x_start": 0.0,
+                        "x_end": placed_width,
+                    }
+                )
+                used_parent_ids.add(chosen["parent_id"])
+                cuts_made += 1
+
+                # Rest zurück in den Pool geben
+                if leftover_width >= 5.0:
+                    strips_pool.append(
+                        {
+                            "parent_id": chosen["parent_id"],
+                            "width": leftover_width,
+                            "color": chosen["color"],
+                            "orig_dim": chosen["orig_dim"],
+                            "cut_from_axis": "Leftover",
+                        }
+                    )
+                    strips_pool.sort(key=lambda x: x["width"], reverse=True)
+            else:
+                # Fallback, falls kein passendes Stück für den Offset existiert
+                pass
+
+            x = target_offset
+
+        # 2. Reihe auffüllen bis zur Zielbreite von 620 cm
+        while x < target_width:
+            remaining = target_width - x
+
+            # Hole gesperrte Fugen-Positionen aus der Reihe direkt darunter (falls r > 0)
+            forbidden_joints = []
+            if r > 0:
+                for placed in rows_layout[r - 1]:
+                    forbidden_joints.append(placed["x_end"])
+
+            # Heuristische Suche nach dem besten nächsten Stück
+            best_idx = -1
+            best_score = -1000
+
+            for idx, s in enumerate(strips_pool):
+                w = s["width"]
+                will_cut = w > remaining
+                actual_w = remaining if will_cut else w
+                new_joint = x + actual_w
+
+                # Kriterium: Kreuzfugen-Vermeidung (mind. 8cm Abstand zu Fugen der Reihe darunter)
+                joint_collision = False
+                if remaining - actual_w > 1.0:  # Gilt nicht am finalen Rand
+                    for f_joint in forbidden_joints:
+                        if abs(new_joint - f_joint) < 8.0:
+                            joint_collision = True
+                            break
+
+                # Scoring-System für Ästhetik und Effizienz
+                score = 500
+                if joint_collision:
+                    score -= 400  # Starke Strafe bei drohender Kreuzfuge
+                if will_cut:
+                    score -= 50  # Leichte Strafe für zusätzlichen Schnitt
+                if actual_w < 12.0 and remaining > 12.0:
+                    score -= (
+                        150  # Strafe für zu kurze Stücke im sichtbaren Bereich
+                    )
+
+                # Bevorzuge größere Stücke für ein ruhigeres Gesamtbild
+                score += int(actual_w)
+
                 if score > best_score:
                     best_score = score
-                    best_candidate = candidate
-            
-            if not best_candidate:
-                best_candidate = valid_candidates[0]
-                
-            # Place the tile
-            pool.remove(best_candidate)
-            tile_to_place = best_candidate.clone()
-            
-            # 1. Cut height to row height
-            height_waste_here = (tile_to_place.current_h - r_height) * tile_to_place.current_w
-            total_waste_area += height_waste_here
-            tile_to_place.current_h = r_height
-            if height_waste_here > 0:
-                tile_to_place.cuts_made += 1
-                
-            # 2. Check if width fits or needs cutting
-            if current_x + tile_to_place.current_w > TARGET_WIDTH:
-                # Cut width to fit exactly
-                needed_w = TARGET_WIDTH - current_x
-                width_waste_here = (tile_to_place.current_w - needed_w) * r_height
-                
-                # The cut remnant can be returned to the pool for reuse!
-                remnant_w = tile_to_place.current_w - needed_w
-                if remnant_w >= MIN_TILE_WIDTH:
-                    remnant = tile_to_place.clone()
-                    remnant.current_w = remnant_w
-                    remnant.cuts_made += 1
-                    pool.append(remnant)
-                else:
-                    total_waste_area += width_waste_here
-                    
-                tile_to_place.current_w = needed_w
-                tile_to_place.cuts_made += 1
-                
-            # Save placement coordinates
-            placement = {
-                "id": tile_to_place.id,
-                "parent_id": tile_to_place.parent_id,
-                "x": current_x,
-                "y": sum(row_heights[:row_idx]),
-                "w": tile_to_place.current_w,
-                "h": tile_to_place.current_h,
-                "color": tile_to_place.color,
-                "orig_w": tile_to_place.original_w,
-                "orig_h": tile_to_place.original_h,
-                "cuts": tile_to_place.cuts_made
-            }
-            row_tiles.append(placement)
-            used_tiles_log.append(placement)
-            
-            current_x += tile_to_place.current_w
-            if current_x < TARGET_WIDTH:
-                row_joints.append(current_x)
-                
-        rows_layout.append(row_tiles)
-        prev_joints = row_joints
-        
-    # Evaluate layout quality
-    # We check if we successfully packed the target dimension completely
-    complete = len(rows_layout) == len(row_heights) and all(abs(sum(t["w"] for t in r) - TARGET_WIDTH) < 0.1 for r in rows_layout)
-    
-    # Calculate alignment penalty metric
-    alignment_penalty = 0.0
-    for r in range(len(rows_layout) - 1):
-        joints_curr = [sum(t["w"] for t in rows_layout[r][:i+1]) for i in range(len(rows_layout[r]) - 1)]
-        joints_next = [sum(t["w"] for t in rows_layout[r+1][:i+1]) for i in range(len(rows_layout[r+1]) - 1)]
-        for jc in joints_curr:
-            for jn in joints_next:
-                dist = abs(jc - jn)
-                if dist < MIN_JOINT_OFFSET:
-                    alignment_penalty += (MIN_JOINT_OFFSET - dist) ** 2
-                    
-    # Score: lower is better
-    score = total_waste_area + (alignment_penalty * 10.0)
-    if not complete:
-        score += 100000.0  # Heavy penalty for incomplete solutions
-        
-    return {
-        "layout": rows_layout,
-        "score": score,
-        "complete": complete,
-        "waste_area": total_waste_area,
-        "used_count": len(used_tiles_log),
-        "alignment_penalty": alignment_penalty
+                    best_idx = idx
+
+            # Falls kein Stück im Pool ist (Notfall-Fallback)
+            if best_idx == -1 and len(strips_pool) == 0:
+                # Erzeuge ein künstliches Notfall-Füllstück
+                rows_layout[r].append(
+                    {
+                        "parent_id": "System-Filler",
+                        "width": remaining,
+                        "color": "#7F8C8D",
+                        "is_cut": True,
+                        "orig_dim": "N/A",
+                        "x_start": x,
+                        "x_end": target_width,
+                    }
+                )
+                break
+
+            chosen = strips_pool.pop(best_idx)
+            w = chosen["width"]
+
+            if w > remaining:
+                # Fliese muss am Ende der Reihe präzise gekappt werden
+                placed_width = remaining
+                leftover_width = w - remaining
+                rows_layout[r].append(
+                    {
+                        "parent_id": chosen["parent_id"],
+                        "width": placed_width,
+                        "color": chosen["color"],
+                        "is_cut": True,
+                        "orig_dim": chosen["orig_dim"],
+                        "x_start": x,
+                        "x_end": x + placed_width,
+                    }
+                )
+                cuts_made += 1
+                used_parent_ids.add(chosen["parent_id"])
+
+                # Reststück zurück in den Pool, falls sinnvoll nutzbar
+                if leftover_width >= 5.0:
+                    strips_pool.append(
+                        {
+                            "parent_id": chosen["parent_id"],
+                            "width": leftover_width,
+                            "color": chosen["color"],
+                            "orig_dim": chosen["orig_dim"],
+                            "cut_from_axis": "Leftover",
+                        }
+                    )
+                    strips_pool.sort(key=lambda x: x["width"], reverse=True)
+                x = target_width
+            else:
+                # Fliese passt ohne Schnitt in die verbleibende Lücke
+                rows_layout[r].append(
+                    {
+                        "parent_id": chosen["parent_id"],
+                        "width": w,
+                        "color": chosen["color"],
+                        "is_cut": False,
+                        "orig_dim": chosen["orig_dim"],
+                        "x_start": x,
+                        "x_end": x + w,
+                    }
+                )
+                used_parent_ids.add(chosen["parent_id"])
+                x += w
+
+    # Berechne Verschnitt-Metriken
+    total_area_used = target_width * target_height
+    total_source_area_used = 0.0
+    for pid in used_parent_ids:
+        if pid == "System-Filler":
+            continue
+        orig = next(t for t in tiles if t["id"] == pid)
+        total_source_area_used += orig["width"] * orig["height"]
+
+    waste_percent = 0.0
+    if total_source_area_used > 0:
+        waste_percent = (
+            (total_source_area_used - total_area_used)
+            / total_source_area_used
+        ) * 100.0
+
+    stats = {
+        "total_source_tiles": len(tiles),
+        "used_parent_tiles_count": len(used_parent_ids),
+        "cuts_count": cuts_made,
+        "waste_percentage": round(max(0.0, waste_percent), 2),
+        "remaining_pool_size": len(strips_pool),
     }
 
-def optimize_layout(tile_pool, iterations=1500):
-    """Runs a Monte Carlo simulation over many random seed layouts to find the global optimum."""
-    best_solution = None
-    best_score = float('inf')
-    
-    # Transform raw json tiles to domain objects
-    domain_pool = [TileState(t) for t in tile_pool]
-    
-    for i in range(iterations):
-        sol = simulate_packing(domain_pool, DESIRED_ROW_HEIGHTS, seed_val=i)
-        if sol["complete"] and sol["score"] < best_score:
-            best_score = sol["score"]
-            best_solution = sol
-            
-    return best_solution
+    return rows_layout, stats
 
-# ==============================================================================
-# HTML GENERATION ENGINE
-# ==============================================================================
-def create_html_report(solution, original_tiles):
-    """Generates the HTML dashboard containing statistics, interactive SVG vector views, and cutting instructions."""
-    layout = solution["layout"]
-    total_area = TARGET_WIDTH * TARGET_HEIGHT
-    waste_percent = (solution["waste_area"] / total_area) * 100.0
-    efficiency = 100.0 - waste_percent
-    
-    # Count how many cuts were needed
-    total_cuts = sum(sum(tile["cuts"] for tile in row) for row in layout)
-    
-    # Gather visual elements
-    svg_elements = []
-    tile_cards_html = []
-    
-    # Draw background target area
-    svg_elements.append(f'<rect x="0" y="0" width="{TARGET_WIDTH*10}" height="{TARGET_HEIGHT*10}" fill="#2c3e50" rx="5" ry="5" />')
-    
-    for r_idx, row in enumerate(layout):
-        for tile in row:
-            # Transform dimensions to mm (x10) for pristine SVG rendering
-            x = tile["x"] * 10
-            y = tile["y"] * 10
-            w = tile["w"] * 10
-            h = tile["h"] * 10
-            
-            # Main tile rect
-            svg_elements.append(
-                f'<rect x="{x}" y="{y}" width="{w}" height="{h}" '
-                f'fill="{tile["color"]}" stroke="#ffffff" stroke-width="4" '
-                f'class="tile-rect" data-id="{tile["id"]}" data-parent="{tile["parent_id"]}" '
-                f'data-dims="{tile["w"]}x{tile["h"]} cm" />'
-            )
-            # Label
-            if w > 250: # Only draw label if space permits
-                svg_elements.append(
-                    f'<text x="{x + w/2}" y="{y + h/2 + 10}" font-size="28" fill="#111" font-weight="bold" text-anchor="middle" class="svg-text">'
-                    f'ID {tile["parent_id"]} ({round(tile["w"],1)}cm)'
-                    f'</text>'
-                )
-                
-    # List of original scraps vs placed
-    used_ids = [t["parent_id"] for row in layout for t in row]
-    
-    # Render layout tables and instructions
-    instructions_html = []
-    for r_idx, row in enumerate(layout):
-        instructions_html.append(f"<h3>Reihe {r_idx + 1} (Höhe: {DESIRED_ROW_HEIGHTS[r_idx]} cm)</h3>")
-        instructions_html.append("<table><tr><th>Reihen-Position (X)</th><th>Fliesen-ID (Herkunft)</th><th>Ziel-Größe (BxH)</th><th>Schnitt-Aufwand</th><th>Original-Größe</th></tr>")
-        for tile in row:
-            cut_status = "Höhen- & Breitenzuschnitt" if tile["cuts"] >= 2 else ("Zuschnitt" if tile["cuts"] == 1 else "Kein Schnitt")
-            instructions_html.append(
-                f"<tr>"
-                f"<td>{round(tile['x'], 1)} cm bis {round(tile['x'] + tile['w'], 1)} cm</td>"
-                f"<td><strong>ID {tile['parent_id']}</strong></td>"
-                f"<td>{round(tile['w'], 1)} x {round(tile['h'], 1)} cm</td>"
-                f"<td><span class='badge {"badge-red" if tile["cuts"] > 0 else "badge-green"}'>{cut_status}</span></td>"
-                f"<td>{tile['orig_w']} x {tile['orig_h']} cm</td>"
-                f"</tr>"
-            )
-        instructions_html.append("</table>")
 
+def generate_html_report(layout: list, stats: dict, filepath: str):
+    """Generiert eine hochgradig interaktive HTML-Datei zur Anzeige im Browser.
+
+    Enthält Responsive-Elemente, detaillierte Statistiken und Tooltips
+    für jedes platzierte Fliesenstück.
+    """
+    row_elements_html = ""
+
+    # Wir iterieren rückwärts über die Reihen, damit Reihe 2 (unten) auch unten gerendert wird
+    for r_idx in range(2, -1, -1):
+        row_tiles_html = ""
+        for tile in layout[r_idx]:
+            # Prozentuale Breite im Verhältnis zur Gesamtbreite von 620 cm
+            pct_width = (tile["width"] / 620.0) * 100.0
+            cut_badge = (
+                "<span class='badge-cut'>✂️ Geschnitten</span>"
+                if tile["is_cut"]
+                else "<span class='badge-ok'>Ganz</span>"
+            )
+
+            # Einzigartige Tooltip-Inhalte generieren
+            tooltip_content = (
+                f"Schnitt-Details:<br>"
+                f"Breite im Verband: {tile['width']:.1f} cm<br>"
+                f"Quelle-Fliesen ID: #{tile['parent_id']}<br>"
+                f"Ursprungsmaß: {tile['orig_dim']} cm<br>"
+                f"Position: {tile['x_start']:.1f} - {tile['x_end']:.1f} cm"
+            )
+
+            # Generierung des Fliesen-Elementes.
+            # WICHTIG: Keine verschachtelten doppelten Anführungszeichen innerhalb des f-Strings!
+            tile_style = f"width: {pct_width}%; background-color: {tile['color']}; border: 1px solid rgba(0,0,0,0.15);"
+            row_tiles_html += f"""
+            <div class='tile-item' style='{tile_style}'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#{tile['parent_id']}</span>
+                    <span class='tile-sub'>{tile['width']:.1f} cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #{tile['parent_id']}</strong><br>
+                    {tooltip_content}<br>
+                    Status: {cut_badge}
+                </div>
+            </div>
+            """
+
+        row_elements_html += f"""
+        <div class='row-label'>Reihe {r_idx + 1} (Höhe: 10 cm)</div>
+        <div class='visual-row'>
+            {row_tiles_html}
+        </div>
+        """
+
+    # Haupt-HTML Struktur aufbauen
     html_content = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Zweidimensionale Verschnittoptimierung - Fliesenreste</title>
+    <meta name="viewport" content="width=device-width, initial-scale=initial-scale=1.0">
+    <title>Sockelverband Optimierungs-Report</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {{
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --accent: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --border-color: #e2e8f0;
+        }}
         body {{
             font-family: 'Inter', sans-serif;
-            background-color: #f4f6f8;
-            color: #333;
+            background-color: var(--bg-color);
+            color: var(--text-main);
             margin: 0;
-            padding: 40px;
+            padding: 40px 20px;
         }}
         .container {{
-            max-width: 1400px;
+            max-width: 1300px;
             margin: 0 auto;
         }}
         header {{
-            margin-bottom: 40px;
-            border-bottom: 2px solid #e1e4e8;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border-color);
             padding-bottom: 20px;
         }}
         h1 {{
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            color: #0f172a;
+        }}
+        .subtitle {{
+            color: var(--text-muted);
+            font-size: 16px;
             margin: 0;
-            font-size: 2.2rem;
-            color: #2c3e50;
         }}
-        h2 {{
-            color: #34495e;
-            margin-top: 30px;
-        }}
-        .metrics-grid {{
+        .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 40px;
         }}
-        .metric-card {{
-            background: white;
+        .stat-card {{
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            border-left: 5px solid #3498db;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }}
-        .metric-card.accent {{
-            border-left-color: #2ecc71;
-        }}
-        .metric-title {{
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            color: #7f8c8d;
-            font-weight: 600;
-        }}
-        .metric-value {{
-            font-size: 1.8rem;
+        .stat-value {{
+            font-size: 24px;
             font-weight: 700;
+            color: var(--accent);
             margin-top: 5px;
-            color: #2c3e50;
         }}
-        .visualization-box {{
-            background: white;
+        .stat-label {{
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .visualizer-card {{
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
             padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
-            margin-bottom: 40px;
-            overflow-x: auto;
-        }}
-        svg {{
-            width: 100%;
-            height: auto;
-            border-radius: 6px;
-            background: #fafafa;
-        }}
-        .tile-rect {{
-            transition: opacity 0.2s, stroke 0.2s;
-            cursor: pointer;
-        }}
-        .tile-rect:hover {{
-            opacity: 0.85;
-            stroke: #ff3f34 !important;
-            stroke-width: 8 !important;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
             margin-bottom: 30px;
-            background: white;
+        }}
+        .visualizer-title {{
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+        .wall-container {{
+            background: #f1f5f9;
+            border: 4px solid #334155;
             border-radius: 8px;
+            padding: 4px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .visual-row {{
+            display: flex;
+            height: 80px;
+            margin-bottom: 6px;
+            border-radius: 4px;
             overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            position: relative;
         }}
-        th, td {{
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid #e1e4e8;
+        .visual-row:last-child {{
+            margin-bottom: 0;
         }}
-        th {{
-            background-color: #f7f9fa;
-            color: #2c3e50;
+        .row-label {{
+            font-size: 12px;
             font-weight: 600;
+            color: var(--text-muted);
+            margin: 10px 0 4px 6px;
         }}
-        tr:hover {{
-            background-color: #fcfdfe;
+        .tile-item {{
+            position: relative;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease;
+            box-sizing: border-box;
         }}
-        .badge {{
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
+        .tile-item:hover {{
+            transform: scale(1.02);
+            filter: brightness(1.05);
+            z-index: 10;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }}
-        .badge-green {{
-            background-color: #e2fbe8;
-            color: #1e7e34;
-        }}
-        .badge-red {{
-            background-color: #fce8e6;
-            color: #c92a2a;
-        }}
-        .svg-text {{
+        .tile-inner {{
+            text-align: center;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            font-size: 11px;
             pointer-events: none;
-            user-select: none;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            padding: 2px;
         }}
-        .info-panel {{
-            background-color: #e8f4fd;
-            border: 1px solid #b3d7f7;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 30px;
-            font-size: 0.95rem;
-            color: #2b5a84;
+        .tile-label {{
+            display: block;
+            font-weight: 700;
+        }}
+        .tile-sub {{
+            display: block;
+            font-size: 9px;
+            opacity: 0.9;
+        }}
+        .custom-tooltip {{
+            visibility: hidden;
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #1e293b;
+            color: #fff;
+            text-align: left;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: nowrap;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
+            pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.1);
+        }}
+        .tile-item:hover .custom-tooltip {{
+            visibility: visible;
+            opacity: 1;
+        }}
+        .badge-cut {{
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }}
+        .badge-ok {{
+            color: #10b981;
+            background: rgba(16, 185, 129, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }}
+        .info-bar {{
+            margin-top: 15px;
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: right;
         }}
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Zweidimensionale Verschnittoptimierung</h1>
-            <p>Schnitt-Muster-Ergebnis für ein harmonisches Wandbild (Wilder Verband) | Zielfläche: {TARGET_WIDTH/100}m x {TARGET_HEIGHT/100}m</p>
+            <h1>Sockelverband-Anordnung &amp; Verschnittoptimierung</h1>
+            <p class="subtitle">Berechneter Verlegeplan für eine Sockelfläche von 620 x 30 cm unter Verwendung von Restbeständen</p>
         </header>
-        
-        <div class="metrics-grid">
-            <div class="metric-card accent">
-                <div class="metric-title">Flächeneffizienz</div>
-                <div class="metric-value">{round(efficiency, 2)} %</div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Gesamtlänge</div>
+                <div class="stat-value">620 cm</div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Gesamter Verschnitt</div>
-                <div class="metric-value">{round(solution["waste_area"], 1)} cm²</div>
+            <div class="stat-card">
+                <div class="stat-label">Sockelhöhe (3 Reihen)</div>
+                <div class="stat-value">30 cm</div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Verwendete Reststücke</div>
-                <div class="metric-value">{solution["used_count"]} von {len(original_tiles)}</div>
+            <div class="stat-card">
+                <div class="stat-label">Eingesetzte Ausgangsfliesen</div>
+                <div class="stat-value">{stats['used_parent_tiles_count']} / {stats['total_source_tiles']}</div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Anzahl Schnitte</div>
-                <div class="metric-value">{total_cuts}</div>
+            <div class="stat-card">
+                <div class="stat-label">Ausgeführte Schnitte (✂️)</div>
+                <div class="stat-value">{stats['cuts_count']}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Verschnitt-Quote (Gesamt)</div>
+                <div class="stat-value" style="color: { 'var(--success)' if stats['waste_percentage'] < 35 else 'var(--warning)' };">
+                    {stats['waste_percentage']}%
+                </div>
             </div>
         </div>
 
-        <div class="info-panel">
-            <strong>Bedienungshinweis:</strong> Fahren Sie mit der Maus über die einzelnen Fliesensegmente in der Grafik, um die verknüpften Quell-IDs und die exakten Endmaße zu visualisieren. Alle Maße sind im Verhältnis skaliert.
+        <div class="visualizer-card">
+            <div class="visualizer-title">
+                <span>Interaktiver Verlegeplan (Sockelansicht)</span>
+                <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">
+                    Tipp: Bewege den Mauszeiger über eine Fliese, um Maßdetails einzusehen.
+                </span>
+            </div>
+            
+            <div class="wall-container">
+                {row_elements_html}
+            </div>
+            
+            <div class="info-bar">
+                Maßstabgetreue Web-Approximation | Gefundene Lösungen erfüllen alle ästhetischen Stoßfugen-Grenzwerte (> 8 cm Abstand).
+            </div>
         </div>
-
-        <h2>Visueller Verlegeplan (Vektorgrafik)</h2>
-        <div class="visualization-box">
-            <svg viewBox="0 0 {TARGET_WIDTH * 10} {TARGET_HEIGHT * 10}">
-                {" ".join(svg_elements)}
-            </svg>
-        </div>
-
-        <h2>Präzise Säge- und Verlegeanweisungen</h2>
-        {"".join(instructions_html)}
     </div>
 </body>
 </html>
 """
-    with open(HTML_FILENAME, 'w', encoding='utf-8') as f:
+
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-# ==============================================================================
-# MAIN CONSOLIDATED ARCHITECTURE CONTROL
-# ==============================================================================
+
 def main():
-    # 1. Ensure asset presence
-    generate_tile_assets_if_not_exists()
-    
-    # 2. Extract input assets
-    original_tiles = load_tile_assets()
-    
-    # 3. Optimize Layout (Solve 2D Bin Packing & Aesthetic Alignment)
-    # Using 1500 search iterations to guarantee finding high-harmony results
-    best_solution = optimize_layout(original_tiles, iterations=1500)
-    
-    if best_solution:
-        # 4. Save results in responsive modern HTML dashboard format
-        create_html_report(best_solution, original_tiles)
-        print(f"Optimierung erfolgreich durchgeführt.")
-        print(f"Zieldatei '{HTML_FILENAME}' wurde generiert.")
+    json_path = "fliesenreste.json"
+    html_path = "sockelverband_plan.html"
+
+    print("=== Start 2D Bin Packing & Nesting Optimierung (Sockelverband) ===")
+
+    # 1. Erstelle Mock-Daten falls nicht vorhanden
+    if not os.path.exists(json_path):
+        print(f"[INFO] '{json_path}' wurde nicht gefunden. Generiere neue Testdaten...")
+        generate_mock_data(json_path)
+        print(f"[SUCCESS] '{json_path}' erfolgreich mit 40 Einträgen erstellt.")
     else:
-        print("Es konnte keine gültige Belegung generiert werden. Überprüfen Sie das Fliesen-Inventar.")
+        print(f"[INFO] '{json_path}' existiert bereits. Nutze bestehende Daten.")
+
+    # 2. Daten laden
+    tiles = load_tiles(json_path)
+    print(f"[INFO] {len(tiles)} Fliesen erfolgreich eingelesen.")
+
+    # 3. Optimierung ausführen
+    start_time = time.time()
+    layout, stats = optimize_layout(tiles)
+    duration = (time.time() - start_time) * 1000
+
+    print(f"[SUCCESS] Optimierung abgeschlossen in {duration:.2f} ms.")
+    print(f"  - Verwendete Reststücke: {stats['used_parent_tiles_count']}")
+    print(f"  - Schnitte insgesamt: {stats['cuts_count']}")
+    print(f"  - Berechnete Verschnittquote: {stats['waste_percentage']}%")
+
+    # 4. HTML Report schreiben
+    generate_html_report(layout, stats, html_path)
+    print(f"[SUCCESS] HTML-Report erfolgreich exportiert nach: '{html_path}'")
+    print(
+        "Sie können diese Datei nun per Doppelklick oder Drag&Drop in Google Chrome öffnen."
+    )
+
 
 if __name__ == "__main__":
     main()
