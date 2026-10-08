@@ -54,4 +54,4 @@ try:
     print("Erfolgreich in das GitHub-Repository hochgeladen!")
 
 except Exception as e:
-    print(f"Ein Fehler ist aufgetreten: {e}")
+    print(f"Ein Fehler ist in aubuild.py aufgetreten: {e}")
