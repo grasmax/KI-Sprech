@@ -9,6 +9,7 @@ client = genai.Client()
 # Ihr lokaler Repository-Pfad
 LOCAL_REPO_PATH = r"E:\dev_priv\git\KI-Sprech"
 FILE_NAME = "fibonacci.py"
+sModel = "gemini-3.5-flash" #gemini-2.5-pro" #"gemini-3.1-pro-preview" # gemini-1.5-pro"#"gemini-3.7-flash"
 
 # Optimierter System-Prompt nach Ihren Repository-Regeln:
 PROMPT = (
@@ -21,9 +22,9 @@ PROMPT = (
 
 try:
     # --- 1. PROMPT AN GEMINI 3.7 FLASH SENDEN ---
-    print("Generiere Code mit Gemini 3.7 Flash...")
+    print(f"Generiere Code mit {sModel}...")
     response = client.models.generate_content(
-        model="gemini-3.7-flash",
+        model=sModel,
         contents=PROMPT,
     )
     generated_code = response.text
@@ -42,7 +43,7 @@ try:
     repo.index.add([FILE_NAME])
     
     # Entspricht: git commit -m "..."
-    commit_message = "Feat: Script automatisch durch Gemini 3.7 Flash erstellt"
+    commit_message = f"Feat: Script automatisch durch {sModel} erstellt"
     new_commit = repo.index.commit(commit_message)
     print(f"Erfolgreich lokal committet! Commit-SHA: {new_commit.hexsha}")
     
