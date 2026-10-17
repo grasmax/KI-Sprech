@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=initial-scale=1.0">
+    <title>Sockelverband Optimierungs-Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --accent: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --border-color: #e2e8f0;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+        header {
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 20px;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            color: #0f172a;
+        }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 16px;
+            margin: 0;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-top: 5px;
+        }
+        .stat-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .visualizer-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        .visualizer-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .wall-container {
+            background: #f1f5f9;
+            border: 4px solid #334155;
+            border-radius: 8px;
+            padding: 4px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .visual-row {
+            display: flex;
+            height: 80px;
+            margin-bottom: 6px;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .visual-row:last-child {
+            margin-bottom: 0;
+        }
+        .row-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin: 10px 0 4px 6px;
+        }
+        .tile-item {
+            position: relative;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease;
+            box-sizing: border-box;
+        }
+        .tile-item:hover {
+            transform: scale(1.02);
+            filter: brightness(1.05);
+            z-index: 10;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .tile-inner {
+            text-align: center;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            font-size: 11px;
+            pointer-events: none;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            padding: 2px;
+        }
+        .tile-label {
+            display: block;
+            font-weight: 700;
+        }
+        .tile-sub {
+            display: block;
+            font-size: 9px;
+            opacity: 0.9;
+        }
+        .custom-tooltip {
+            visibility: hidden;
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #1e293b;
+            color: #fff;
+            text-align: left;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: nowrap;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
+            pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .tile-item:hover .custom-tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+        .badge-cut {
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .badge-ok {
+            color: #10b981;
+            background: rgba(16, 185, 129, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .info-bar {
+            margin-top: 15px;
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sockelverband-Anordnung &amp; Verschnittoptimierung</h1>
+            <p class="subtitle">Berechneter Verlegeplan für eine Sockelfläche von 620 x 30 cm unter Verwendung von Restbeständen</p>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Gesamtlänge</div>
+                <div class="stat-value">620 cm</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Sockelhöhe (3 Reihen)</div>
+                <div class="stat-value">30 cm</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Eingesetzte Ausgangsfliesen</div>
+                <div class="stat-value">5 / 40</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Ausgeführte Schnitte (✂️)</div>
+                <div class="stat-value">3</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Verschnitt-Quote (Gesamt)</div>
+                <div class="stat-value" style="color: var(--warning);">
+                    99.35%
+                </div>
+            </div>
+        </div>
+
+        <div class="visualizer-card">
+            <div class="visualizer-title">
+                <span>Interaktiver Verlegeplan (Sockelansicht)</span>
+                <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">
+                    Tipp: Bewege den Mauszeiger über eine Fliese, um Maßdetails einzusehen.
+                </span>
+            </div>
+            
+            <div class="wall-container">
+                
+        <div class='row-label'>Reihe 3 (Höhe: 10 cm)</div>
+        <div class='visual-row'>
+            
+            <div class='tile-item' style='width: 7.096774193548387%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>44.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 44.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 0.0 - 44.0 cm<br>
+                    Status: <span class='badge-cut'>✂️ Geschnitten</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.645161290322582%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>97.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 97.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 44.0 - 141.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.645161290322582%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>97.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 97.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 141.0 - 238.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.645161290322582%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>97.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 97.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 238.0 - 335.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.645161290322582%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>97.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 97.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 335.0 - 432.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.161290322580644%; background-color: #8C9394; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#34</span>
+                    <span class='tile-sub'>94.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #34</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 94.0 cm<br>Quelle-Fliesen ID: #34<br>Ursprungsmaß: 70x94 cm<br>Position: 432.0 - 526.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.161290322580644%; background-color: #8C9394; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#34</span>
+                    <span class='tile-sub'>94.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #34</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 94.0 cm<br>Quelle-Fliesen ID: #34<br>Ursprungsmaß: 70x94 cm<br>Position: 526.0 - 620.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+        </div>
+        
+        <div class='row-label'>Reihe 2 (Höhe: 10 cm)</div>
+        <div class='visual-row'>
+            
+            <div class='tile-item' style='width: 3.5483870967741935%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>22.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 22.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 0.0 - 22.0 cm<br>
+                    Status: <span class='badge-cut'>✂️ Geschnitten</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 22.0 - 121.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.806451612903224%; background-color: #6B7375; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#27</span>
+                    <span class='tile-sub'>98.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #27</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 98.0 cm<br>Quelle-Fliesen ID: #27<br>Ursprungsmaß: 42x98 cm<br>Position: 121.0 - 219.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.806451612903224%; background-color: #6B7375; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#27</span>
+                    <span class='tile-sub'>98.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #27</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 98.0 cm<br>Quelle-Fliesen ID: #27<br>Ursprungsmaß: 42x98 cm<br>Position: 219.0 - 317.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.806451612903224%; background-color: #6B7375; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#27</span>
+                    <span class='tile-sub'>98.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #27</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 98.0 cm<br>Quelle-Fliesen ID: #27<br>Ursprungsmaß: 42x98 cm<br>Position: 317.0 - 415.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.806451612903224%; background-color: #6B7375; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#27</span>
+                    <span class='tile-sub'>98.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #27</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 98.0 cm<br>Quelle-Fliesen ID: #27<br>Ursprungsmaß: 42x98 cm<br>Position: 415.0 - 513.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.645161290322582%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>97.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 97.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 513.0 - 610.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 1.6129032258064515%; background-color: #3B3C3A; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#15</span>
+                    <span class='tile-sub'>10.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #15</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 10.0 cm<br>Quelle-Fliesen ID: #15<br>Ursprungsmaß: 75x97 cm<br>Position: 610.0 - 620.0 cm<br>
+                    Status: <span class='badge-cut'>✂️ Geschnitten</span>
+                </div>
+            </div>
+            
+        </div>
+        
+        <div class='row-label'>Reihe 1 (Höhe: 10 cm)</div>
+        <div class='visual-row'>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 0.0 - 99.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 99.0 - 198.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 198.0 - 297.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 297.0 - 396.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 396.0 - 495.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 15.96774193548387%; background-color: #878884; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#10</span>
+                    <span class='tile-sub'>99.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #10</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 99.0 cm<br>Quelle-Fliesen ID: #10<br>Ursprungsmaß: 99x86 cm<br>Position: 495.0 - 594.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+            <div class='tile-item' style='width: 4.193548387096775%; background-color: #8E8275; border: 1px solid rgba(0,0,0,0.15);'>
+                <div class='tile-inner'>
+                    <span class='tile-label'>#5</span>
+                    <span class='tile-sub'>26.0 cm</span>
+                </div>
+                <div class='custom-tooltip'>
+                    <strong>Fliese #5</strong><br>
+                    Schnitt-Details:<br>Breite im Verband: 26.0 cm<br>Quelle-Fliesen ID: #5<br>Ursprungsmaß: 83x26 cm<br>Position: 594.0 - 620.0 cm<br>
+                    Status: <span class='badge-ok'>Ganz</span>
+                </div>
+            </div>
+            
+        </div>
+        
+            </div>
+            
+            <div class="info-bar">
+                Maßstabgetreue Web-Approximation | Gefundene Lösungen erfüllen alle ästhetischen Stoßfugen-Grenzwerte (> 8 cm Abstand).
+            </div>
+        </div>
+    </div>
+</body>
+</html>

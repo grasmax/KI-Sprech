@@ -24,12 +24,12 @@ Schreibe mir ein einziges, konsolidiertes und optimiertes Python-Skript (piccat_
 
 Hier ist der Code der beiden Dateien:
 
-=== START DATEI: piccat_client_x2x4x16.py ===
-[Diese Datei soll nicht geändert werden. Es sind nur die Code-Teile für das Einlesen der Bilddateien und für das Speichern der Ergebnisse in die piccat_server_neu.py zu übertragen.]
+=== START DATEI: https://github.com/grasmax/piccat/blob/main/piccat_client_x2x4x16.py ===
+[Diese Datei soll nicht geändert werden. Es sollen nur die Code-Teile für das Einlesen der Bilddateien und für das Speichern der Ergebnisse in die piccat_server_neu.py zu übertragen.]
 === ENDE DATEI: piccat_client_x2x4x16.py ===
 
-=== START DATEI: piccat_server_x16.py ===
-[Diese Datei soll nicht geändert werden.]
+=== START DATEI: https://github.com/grasmax/piccat/blob/main/piccat_server_x16.py ===
+[Diese Datei soll nicht geändert werden. Es sollen nur die Code-Teile für das Kategorisieren und Speichern der Ergebnisse übernommen werden.]
 === ENDE DATEI: piccat_server_x16.py ===
 
 Fasse alle notwendigen Codefragement in einer Datei zusammen und gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code aus, damit ich ihn direkt in ein lokales Git-Repository committen kann.

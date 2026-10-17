@@ -62,6 +62,7 @@ def optimize_layout(tiles: list) -> tuple:
     Sockelverband der Größe 620 x 30 cm (3 Reihen à 10 cm Höhe).
     """
     target_width = 620.0
+    target_height = 0.3
     row_height = 10.0
     num_rows = 3
 
