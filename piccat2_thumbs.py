@@ -1,0 +1,113 @@
+import os
+import sys
+import time
+from pathlib import Path
+from PIL import Image, ImageOps
+
+SOURCE_DIR = r"F:\bilder"
+CACHE_DIR = r"F:\bilder\.piccat_cache"
+TARGET_SIZE = (336, 336)
+VALID_EXTENSIONS = (".jpg", ".jpeg")
+
+
+def main():
+    print(f"Starte Thumbnail-Generierung...")
+    print(f"Quellverzeichnis: {SOURCE_DIR}")
+    print(f"Cache-Verzeichnis: {CACHE_DIR}")
+
+    if not os.path.exists(SOURCE_DIR):
+        print(f"FEHLER: Quellverzeichnis '{SOURCE_DIR}' existiert nicht.")
+        sys.exit(1)
+
+    t_start = time.time()
+
+    # 1. Bilddateien ermitteln
+    print("Scanne Dateisystem nach Bildern...")
+    file_list = []
+    cache_dirname = os.path.basename(CACHE_DIR).lower()
+
+    for root, dirs, files in os.walk(SOURCE_DIR):
+        # Ordner ignorieren, die mit '000' beginnen oder der Cache-Ordner selbst sind
+        dirs[:] = [
+            d for d in dirs
+            if not d.startswith("000") and d.lower() != cache_dirname
+        ]
+
+        for file_name in files:
+            if file_name.lower().endswith(VALID_EXTENSIONS):
+                file_list.append(os.path.join(root, file_name))
+
+    count_total = len(file_list)
+    print(f"{count_total} relevante Bilddateien gefunden.")
+
+    count_processed = 0
+    count_skipped = 0
+    count_errors = 0
+    last_print = 0.0
+
+    # 2. Bildverarbeitung
+    for idx, src_file in enumerate(file_list, start=1):
+        try:
+            rel_path = os.path.relpath(src_file, SOURCE_DIR)
+            dest_file = os.path.join(CACHE_DIR, rel_path)
+
+            if os.path.exists(dest_file):
+                count_skipped += 1
+            else:
+                dest_dir = os.path.dirname(dest_file)
+                if not os.path.exists(dest_dir):
+                    os.makedirs(dest_dir, exist_ok=True)
+
+                with Image.open(src_file) as img_raw:
+                    img_rgb = img_raw.convert("RGB")
+
+                img_trans = ImageOps.exif_transpose(img_rgb)
+                img_rgb.close()
+
+                img_final = ImageOps.fit(
+                    img_trans, TARGET_SIZE, method=Image.Resampling.LANCZOS
+                )
+                img_trans.close()
+
+                img_final.save(dest_file, format="JPEG", quality=85)
+                img_final.close()
+
+                count_processed += 1
+
+        except Exception:
+            count_errors += 1
+
+        # Fortschritt strikt nur alle 2 Sekunden ausgeben
+        now = time.time()
+        if now - last_print >= 2.0:
+            elapsed = now - t_start
+            pct = (idx / count_total * 100.0) if count_total > 0 else 0.0
+            speed = idx / elapsed if elapsed > 0 else 0.0
+            print(
+                f"\rVerarbeitet: {idx}/{count_total} | {pct:5.1f}% | Geschwindigkeit: {speed:5.1f} Bilder/Sek",
+                end="",
+                flush=True
+            )
+            last_print = now
+
+    # Zeilenumbruch nach dem interaktiven Fortschritt
+    print()
+
+    # 3. Abschluss-Zusammenfassung (max. 10 Zeilen)
+    total_sec = time.time() - t_start
+    m, s = divmod(int(total_sec), 60)
+    h, m = divmod(m, 60)
+    dauer_str = f"{h:02d}:{m:02d}:{s:02d}"
+
+    print("=" * 60)
+    print("ZUSAMMENFASSUNG: THUMBNAIL-CACHING")
+    print(f"Gesamtlaufzeit:      {dauer_str} ({total_sec:.2f} s)")
+    print(f"Dateien gesamt:      {count_total}")
+    print(f"Neu verarbeitet:     {count_processed}")
+    print(f"Übersprungen (Cache): {count_skipped}")
+    print(f"Fehlerhafte Dateien: {count_errors}")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

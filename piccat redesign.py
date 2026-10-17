@@ -3,57 +3,83 @@ from google import genai
 from google.genai import types
 
 # 1. API-Client initialisieren
-# Der API-Key wird automatisch aus der Windows-Umgebungsvariable GEMINI_API_KEY geladen.
 client = genai.Client()
 
 # Pfade zu Ihren bestehenden Skripten im Visual Studio Projektordner
 client_script_path = "piccat_client_x2x4x16.py"
 server_script_path = "piccat_server_x16.py"
-output_script_path = "piccat_server_neu.py"
 
-# Modell-Auswahl für Oktober 2026: 'gemini-3.7-flash' ist im Free-Tier kostenlos, 
-# extrem schnell und hochpräzise bei der Code-Generierung.
+# Die beiden neuen Zielpfade
+output_thumbs_path = "piccat2_thumbs.py"
+output_cat_path = "piccat2_cat.py"
+
 sModel = "gemini-3.7-flash"
 
 print("Lese bestehende Quelldateien ein...")
 
-# 2. Inhalt der alten Skripte einlesen
 try:
     with open(client_script_path, "r", encoding="utf-8") as f:
         client_code = f.read()
 except FileNotFoundError:
-    print(f"Fehler: {client_script_path} wurde nicht gefunden. Bitte Pfad prüfen.")
+    print(f"Fehler: {client_script_path} wurde nicht gefunden.")
     exit(1)
 
 try:
     with open(server_script_path, "r", encoding="utf-8") as f:
         server_code = f.read()
 except FileNotFoundError:
-    print(f"Fehler: {server_script_path} wurde nicht gefunden. Bitte Pfad prüfen.")
+    print(f"Fehler: {server_script_path} wurde nicht gefunden.")
     exit(1)
 
-# 3. Den optimierten Architektur-Prompt mit den Code-Inhalten zusammenbauen
-prompt_text = f"""Du bist ein erfahrener Software-Architekt für Python, Computer Vision und High-Performance Deep Learning. 
-Deine Spezialgebiete sind Bildverarbeitung und Bild-Kategorisierung unter Verwendung von PyTorch (torch, torchvision), OpenCV und CUDA-basiertem GPU-Computing. 
-
-Ich arbeite in Visual Studio Community und plane ein Refactoring meines Bildanalyse-Projekts "piccat". 
-
-Hier sind die neuen Rahmenbedingungen für das Zielsystem:
-1. Die Bilddateien liegen lokal auf einer externen USB-3.0-Festplatte (HDD), die direkt an den schnellen Gaming-PC angeschlossen ist. Es findet KEINE Bildübertragung über das Netzwerk statt.
-2. Das Einlesen der Bilder und die gesamte Verarbeitung sollen komplett auf diesem PC (AMD Ryzen 7 7800X3D und NVIDIA RTX 5060 Ti) stattfinden.
-3. Nur die finalen Analyse-Ergebnisse (Metadaten/Ergebnisdaten) sollen am Ende in eine externe MariaDB auf einem Raspberry Pi geschrieben werden.
-4. Die alte Server-Netzwerk-Hülle (FastAPI, Uvicorn, Sockets, Request-Handler, Netzwerk-Listener) wird nicht mehr benötigt und soll komplett entfernt werden.
+# ==============================================================================
+# PROMPT 1: Für das Vorbereitungsskript (Thumbs)
+# ==============================================================================
+prompt_thumbs = f"""Du bist ein erfahrener Software-Architekt für Python und Computer Vision.
+Ich plane ein Refactoring meines Bildanalyse-Projekts "piccat".
 
 DEINE AUFGABE:
-Schreibe mir ein einziges, konsolidiertes und optimiertes Python-Skript (piccat_server_neu.py) für den Gaming-PC.
-- Übernehme die Logik für das Einlesen und Vorverarbeiten (Skalieren auf 224x224 bzw. 336x336 via Pillow) der Bilddateien aus der Client-Datei.
-- Integriere die CLIP-Analyse-Logik aus der Server-Datei und optimiere sie für CUDA und FP16 (Half Precision).
-- Da die Bilder von einer mechanischen USB-HDD gelesen werden, implementiere ein asynchrones Producer-Consumer-Muster mit einer Queue. Ein Hintergrund-Thread muss die Bilder von der USB-Platte vorladen, während die GPU parallel die Batches verarbeitet, damit die GPU niemals auf den I/O-Unterbau warten muss.
-- Entferne die gesamte Netzwerk-Server-Hülle (FastAPI) sowie die binäre Serialisierung (struct.pack/unpack). Die Bilder werden direkt im RAM als PyTorch-Tensoren übergeben.
-- Passe das Speichern so an, dass die Ergebnisse via Bulk-Insert direkt in die externe MariaDB auf dem Raspberry Pi geschrieben werden (nutze dafür das native Modul 'mariadb'). Schreibe die Daten in Paketen (z. B. nach jedem Ordner oder nach 1000 Bildern), um den Netzwerk-Overhead zum Raspi zu minimieren.
+Schreibe mir ein eigenständiges Python-Skript namens "piccat2_thumbs.py". Dieses Programm ist rein für das Einlesen, Rotieren, Herunterskalieren der Originalbilder und das Speichern der herunterskalierten Thumbs zuständig.
 
-Hier ist der Code der beiden Dateien:
+RAHMENBEDINGUNGEN & LOGIK:
+1. Das Skript piccat2_thumbs.py soll alle Originalbilder aus dem Verzeichnis F:\\bilder einlesen.
+2. Nutze die Einlese- und Ordnerstruktur-Logik aus der unten bereitgestellten Client-Datei (os.walk, EXIF-Rotation via Pillow).
+3. Jedes Bild soll auf exakt 336x336 Pixel mit dem LANCZOS-Filter skaliert und in einen dedizierten Cache-Ordner auf der externen Festplatte (z. B. 'F:\\bilder\\.piccat_cache\\') gespeichert werden. Die originale Unterordner-Struktur muss im Cache-Ordner exakt gespiegelt werden.
+4. Falls ein Bild im Cache-Ordner bereits existiert, soll es übersprungen werden (inkrementelles Arbeiten).
+5. Das Skript benötigt KEINE KI-Module (kein torch, kein clip) und KEINE Datenbankverbindung. Es läuft rein auf der CPU.
 
+FORTSCHRITTSANZEIGE & KONSOLEN-LOGGING (WICHTIG):
+- Das Skript darf den Fortschritt (z. B. "Verarbeitet: X/Y Bildern | Z% | Geschwindigkeit: A Bilder/Sek") strikt NUR alle 2 Sekunden auf der Kommandozeile ausgeben, um die Konsole nicht zu überfluten. Nutze dafür eine Abfrage wie 'if time.time() - last_print >= 2:'.
+- Am Ende des Programms MUSS eine saubere, übersichtliche und MAXIMAL 10 Zeilen lange Zusammenfassung ausgegeben werden. Diese muss mindestens enthalten: Gesamtlaufzeit, Anzahl der neu verarbeiteten Bilder, Anzahl der übersprungenen (bereits gecachten) Bilder sowie eventuelle Fehler.
+
+Hier ist der Code der Client-Datei als Basis:
+=== START DATEI: piccat_client_x2x4x16.py ===
+{client_code}
+=== ENDE DATEI: piccat_client_x2x4x16.py ===
+
+Gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code für "piccat2_thumbs.py" aus. Antworte ohne umschließende Markdown-Code-Blöcke (keine ```python-Tags)."""
+
+# ==============================================================================
+# PROMPT 2: Für das KI-Analyseskript (Kategorisierung)
+# ==============================================================================
+prompt_cat = f"""Du bist ein erfahrener Software-Architect für High-Performance Deep Learning mit PyTorch, CUDA und CLIP.
+Ich plane ein Refactoring meines Bildanalyse-Projekts "piccat".
+
+DEINE AUFGABE:
+Schreibe mir ein eigenständiges Python-Skript namens "piccat2_cat.py". Dieses Programm führt die KI-Kategorisierung durch und speichert die Ergebnisse.
+
+RAHMENBEDINGUNGEN & LOGIK:
+1. Das Skript liest KEINE Originalbilder mehr ein, sondern arbeitet ausschließlich mit den bereits vorbereiteten 336x336-Bildern aus dem Cache-Ordner 'F:\\bilder\\.piccat_cache\\'.
+2. Implementiere ein performantes Producer-Consumer-Muster mit 'threading.Queue'. Ein Hintergrund-Thread lädt die 336x336-Bilder blitzschnell aus dem Cache vor, während der Haupt-Thread die Batches (Größe 16) auf der GPU/CPU verarbeitet.
+3. Integriere die CLIP-Analyse-Logik aus der Server-Datei.
+4. Schalte die Hardware automatisch: 'device = "cuda" if torch.cuda.is_available() else "cpu"'. Wenn CUDA verfügbar ist (Gaming-PC), aktiviere FP16 (Half Precision).
+5. Entferne die gesamte alte Netzwerk-Server-Hülle (FastAPI, Uvicorn, Sockets) und die struct.pack-Serialisierung vollständig.
+6. Schreibe die finalen Analyse-Ergebnisse via Bulk-Insert mit dem nativen Modul 'mariadb' direkt in die externe MariaDB auf dem Raspberry Pi (in Paketen von z. B. 1000 Bildern), um den Netzwerk-Overhead zu minimieren. Nutze das bestehende Tabellenschema aus der Client-Datei.
+
+FORTSCHRITTSANZEIGE & KONSOLEN-LOGGING (WICHTIG):
+- Das Skript darf den Status (fortlaufende I/O-Time und Inference-Time in Millisekunden sowie den Gesamtfortschritt) strikt NUR alle 2 Sekunden auf der Kommandozeile ausgeben ('if time.time() - last_print >= 2:').
+- Am Ende des Programms MUSS eine saubere, übersichtliche und MAXIMAL 10 Zeilen lange Zusammenfassung ausgegeben werden. Diese muss mindestens enthalten: Gesamtlaufzeit des KI-Prozesses, Anzahl der erfolgreich kategorisierten Bilder, durchschnittliche Zeit pro Batch sowie Status der Datenbankübertragung.
+
+Hier sind die Quellcodes:
 === START DATEI: piccat_client_x2x4x16.py ===
 {client_code}
 === ENDE DATEI: piccat_client_x2x4x16.py ===
@@ -62,63 +88,23 @@ Hier ist der Code der beiden Dateien:
 {server_code}
 === ENDE DATEI: piccat_server_x16.py ===
 
-Fasse alle notwendigen Codefragmente in einer einzigen Datei zusammen und gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code aus, damit ich ihn direkt in ein lokales Git-Repository committen kann. Antworte ohne umschließende Markdown-Code-Blöcke (keine ```python-Tags), sondern liefere ausschließlich den reinen Skriptinhalt."""
+Gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code für "piccat2_cat.py" aus. Antworte ohne umschließende Markdown-Code-Blöcke (keine ```python-Tags)."""
 
-print(f"Sende Code und Architektur-Prompt an Gemini ({sModel})...")
-
-# 4. API-Aufruf an das ausgewählte Modell
-# Temperature 0.1 sorgt für strikt logische Einhaltung der Programmiervorgaben.
-response = client.models.generate_content(
-    model=sModel,
-    contents=prompt_text,
-    config=types.GenerateContentConfig(
-        temperature=0.1,
-    )
+# 4. API-Aufrufe nacheinander starten
+print(f"Generiere Stufe 1: {output_thumbs_path}...")
+response_thumbs = client.models.generate_content(
+    model=sModel, contents=prompt_thumbs, config=types.GenerateContentConfig(temperature=0.1)
 )
+with open(output_thumbs_path, "w", encoding="utf-8") as f:
+    f.write(response_thumbs.text)
 
-# 5. Das generierte Skript direkt abspeichern
-print(f"Refactoring abgeschlossen. Schreibe Ergebnis in {output_script_path}...")
-with open(output_script_path, "w", encoding="utf-8") as f:
-    f.write(response.text)
+print(f"Generiere Stufe 2: {output_cat_path}...")
+response_cat = client.models.generate_content(
+    model=sModel, contents=prompt_cat, config=types.GenerateContentConfig(temperature=0.1)
+)
+with open(output_cat_path, "w", encoding="utf-8") as f:
+    f.write(response_cat.text)
 
-print("Fertig! Die Datei kann jetzt in Visual Studio geöffnet und auf dem E570 getestet werden.")
-
-
-
-
-
-Du bist ein erfahrener Software-Architekt für Python, Computer Vision und High-Performance Deep Learning. 
-Deine Spezialgebiete sind Bildverarbeitung und Bild-Kategorisierung unter Verwendung von PyTorch (torch, torchvision), OpenCV und CUDA-basiertem GPU-Computing. 
-
-
-Ich arbeite in Visual Studio Community und plane ein Refactoring meines Bildanalyse-Projekts "piccat". 
-
-Hier sind die neuen Rahmenbedingungen für das Zielsystem:
-1. Die Bilddateien liegen lokal auf einer externen USB-3.0-Festplatte, die direkt an den schnellen Gaming-PC (Server) angeschlossen ist. Es findet KEINE Bildübertragung über das Netzwerk statt.
-2. Das Einlesen der Bilder und die gesamte Verarbeitung sollen komplett auf diesem Server stattfinden.
-3. Nur die finalen Analyse-Ergebnisse (Metadaten/Ergebnisdaten) sollen am Ende in eine externe MariaDB auf einem Raspberry Pi geschrieben werden.
-4. Die alte Server-Netzwerk-Hülle (z. B. Sockets, Request-Handler, Netzwerk-Listener) wird nicht mehr benötigt und soll komplett entfernt werden.
-
-Ich stelle dir unten den Code der beiden bisherigen Dateien zur Verfügung:
-- "piccat_client_x2x4x16.py" (enthält aktuell die Logik für das Einlesen und Speichern)
-- "piccat_server_x16.py" (enthält die Analyse-Logik und die alte Server-Netzwerk-Infrastruktur)
-
-DEINE AUFGABE:
-Schreibe mir ein einziges, konsolidiertes und optimiertes Python-Skript (piccat_server_neu.py) für den Gaming-PC mit diesen Komponenten ########. 
-- Übernehme die Logik für das Einlesen der Bilddateien aus der Client-Datei.
-- Integriere die Analyse-Logik aus der Server-Datei.
-- Entferne die gesamte Netzwerk-Server-Hülle aus der Server-Datei.
-- Passe das Speichern so an, dass die Ergebnisse direkt in die externe MariaDB auf dem Raspberry Pi geschrieben werden (nutze dafür eine saubere SQL-Verbindung, z.B. via mysql-connector-python oder PyMySQL).
-- Optimiere den Code für die Ausführung auf einem schnellen Gaming-PC (z. B. effizientes I/O-Handling beim Einlesen von der USB-Festplatte).
-
-Hier ist der Code der beiden Dateien:
-
-=== START DATEI: https://github.com/grasmax/piccat/blob/main/piccat_client_x2x4x16.py ===
-[Diese Datei soll nicht geändert werden. Es sollen nur die Code-Teile für das Einlesen der Bilddateien und für das Speichern der Ergebnisse in die piccat_server_neu.py zu übertragen.]
-=== ENDE DATEI: piccat_client_x2x4x16.py ===
-
-=== START DATEI: https://github.com/grasmax/piccat/blob/main/piccat_server_x16.py ===
-[Diese Datei soll nicht geändert werden. Es sollen nur die Code-Teile für das Kategorisieren und Speichern der Ergebnisse übernommen werden.]
-=== ENDE DATEI: piccat_server_x16.py ===
-
-Fasse alle notwendigen Codefragement in einer Datei zusammen und gib mir als Ausgabe NUR den finalen, einsatzbereiten Python-Code aus, damit ich ihn direkt in ein lokales Git-Repository committen kann.
+print("\nFertig! Beide Programme wurden erfolgreich getrennt voneinander erzeugt:")
+print(f"1. [{output_thumbs_path}] -> Für CPU/E570 (Bildvorbereitung & 2s-Takt-Log)")
+print(f"2. [{output_cat_path}] -> Für GPU/Ryzen (KI-Analyse, Bulk-DB & 2s-Takt-Log)")
