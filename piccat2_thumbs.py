@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import warnings
 from pathlib import Path
 from PIL import Image, ImageOps
 
@@ -20,6 +21,7 @@ def main():
         sys.exit(1)
 
     t_start = time.time()
+    start_str = time.strftime("%H:%M:%S", time.localtime(t_start))
 
     # 1. Bilddateien ermitteln
     print("Scanne Dateisystem nach Bildern...")
@@ -58,19 +60,26 @@ def main():
                 if not os.path.exists(dest_dir):
                     os.makedirs(dest_dir, exist_ok=True)
 
-                with Image.open(src_file) as img_raw:
-                    img_rgb = img_raw.convert("RGB")
+                with warnings.catch_warnings(record=True) as caught_warnings:
+                    warnings.simplefilter("always", UserWarning)
 
-                img_trans = ImageOps.exif_transpose(img_rgb)
-                img_rgb.close()
+                    with Image.open(src_file) as img_raw:
+                        img_rgb = img_raw.convert("RGB")
 
-                img_final = ImageOps.fit(
-                    img_trans, TARGET_SIZE, method=Image.Resampling.LANCZOS
-                )
-                img_trans.close()
+                    img_trans = ImageOps.exif_transpose(img_rgb)
+                    img_rgb.close()
 
-                img_final.save(dest_file, format="JPEG", quality=85)
-                img_final.close()
+                    img_final = ImageOps.fit(
+                        img_trans, TARGET_SIZE, method=Image.Resampling.LANCZOS
+                    )
+                    img_trans.close()
+
+                    img_final.save(dest_file, format="JPEG", quality=85)
+                    img_final.close()
+
+                    if caught_warnings:
+                        for w in caught_warnings:
+                            print(f"\n[EXIF-WARNUNG] {src_file}: {w.message}")
 
                 count_processed += 1
 
@@ -83,8 +92,14 @@ def main():
             elapsed = now - t_start
             pct = (idx / count_total * 100.0) if count_total > 0 else 0.0
             speed = idx / elapsed if elapsed > 0 else 0.0
+            if speed > 0:
+                remaining_sec = (count_total - idx) / speed
+                eta_str = time.strftime("%H:%M:%S", time.localtime(now + remaining_sec))
+            else:
+                eta_str = "--:--:--"
+
             print(
-                f"\rVerarbeitet: {idx}/{count_total} | {pct:5.1f}% | Geschwindigkeit: {speed:5.1f} Bilder/Sek",
+                f"\rVerarbeitet: {idx}/{count_total} | {pct:5.1f}% | Geschwindigkeit: {speed:5.1f} Bilder/Sek | ETA: {eta_str}",
                 end="",
                 flush=True
             )
@@ -93,19 +108,23 @@ def main():
     # Zeilenumbruch nach dem interaktiven Fortschritt
     print()
 
-    # 3. Abschluss-Zusammenfassung (max. 10 Zeilen)
-    total_sec = time.time() - t_start
+    # 3. Abschluss-Zusammenfassung (maximal 10 Zeilen)
+    t_end = time.time()
+    end_str = time.strftime("%H:%M:%S", time.localtime(t_end))
+    total_sec = t_end - t_start
     m, s = divmod(int(total_sec), 60)
     h, m = divmod(m, 60)
     dauer_str = f"{h:02d}:{m:02d}:{s:02d}"
 
     print("=" * 60)
     print("ZUSAMMENFASSUNG: THUMBNAIL-CACHING")
-    print(f"Gesamtlaufzeit:      {dauer_str} ({total_sec:.2f} s)")
-    print(f"Dateien gesamt:      {count_total}")
-    print(f"Neu verarbeitet:     {count_processed}")
+    print(f"Startzeit:            {start_str}")
+    print(f"Ende-Zeitpunkt:       {end_str}")
+    print(f"Gesamtlaufzeit:       {dauer_str} ({total_sec:.2f} s)")
+    print(f"Dateien gesamt:       {count_total}")
+    print(f"Neu verarbeitet:      {count_processed}")
     print(f"Übersprungen (Cache): {count_skipped}")
-    print(f"Fehlerhafte Dateien: {count_errors}")
+    print(f"Fehlerhafte Dateien:  {count_errors}")
     print("=" * 60)
 
 
