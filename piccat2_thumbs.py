@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import warnings
+from collections import deque
 from pathlib import Path
 from PIL import Image, ImageOps
 
@@ -9,6 +10,7 @@ SOURCE_DIR = r"F:\bilder"
 CACHE_DIR = r"F:\bilder\.piccat_cache"
 TARGET_SIZE = (336, 336)
 VALID_EXTENSIONS = (".jpg", ".jpeg")
+WINDOW_SECONDS = 20.0  # Zeitfenster für dynamische Momentangeschwindigkeit
 
 
 def main():
@@ -47,6 +49,9 @@ def main():
     count_errors = 0
     last_print = 0.0
 
+    # Verlaufsspeicher für gleitende Momentangeschwindigkeit: (timestamp, count_processed)
+    speed_history = deque([(t_start, 0)])
+
     # 2. Bildverarbeitung
     for idx, src_file in enumerate(file_list, start=1):
         try:
@@ -60,44 +65,52 @@ def main():
                 if not os.path.exists(dest_dir):
                     os.makedirs(dest_dir, exist_ok=True)
 
+                # EXIF-Warnungen fangen und dem Bild zuordnen
                 with warnings.catch_warnings(record=True) as caught_warnings:
                     warnings.simplefilter("always", UserWarning)
 
                     with Image.open(src_file) as img_raw:
-                        img_rgb = img_raw.convert("RGB")
-
-                    img_trans = ImageOps.exif_transpose(img_rgb)
-                    img_rgb.close()
+                        img_trans = ImageOps.exif_transpose(img_raw)
+                        img_rgb = img_trans.convert("RGB")
+                        if img_trans is not img_raw:
+                            img_trans.close()
 
                     img_final = ImageOps.fit(
-                        img_trans, TARGET_SIZE, method=Image.Resampling.LANCZOS
+                        img_rgb, TARGET_SIZE, method=Image.Resampling.LANCZOS
                     )
-                    img_trans.close()
+                    img_rgb.close()
 
                     img_final.save(dest_file, format="JPEG", quality=85)
                     img_final.close()
 
                     if caught_warnings:
                         for w in caught_warnings:
-                            # Zeile bereinigen, damit die Fortschrittsanzeige nicht zerschossen wird
-                            print(f"\r{' ' * 100}\r[EXIF-WARNUNG] {src_file}: {w.message}")
+                            # Zeile bereinigen und Warnung formatiert ausgeben
+                            print(f"\r{' ' * 120}\r[EXIF-WARNUNG] {src_file}: {w.message}", flush=True)
 
                 count_processed += 1
 
         except Exception:
             count_errors += 1
 
-        # Fortschritt strikt nur alle 2 Sekunden ausgeben
+        # Fortschritt strikt alle 2 Sekunden ausgeben
         now = time.time()
         if now - last_print >= 2.0:
-            elapsed = now - t_start
             pct = (idx / count_total * 100.0) if count_total > 0 else 0.0
 
-            # Geschwindigkeit nur anhand tatsächlich neu verarbeiteter Bilder ermitteln
-            speed = (count_processed / elapsed) if elapsed > 0 else 0.0
+            # Dynamische Momentangeschwindigkeit über gleitendes Zeitfenster
+            speed_history.append((now, count_processed))
+            while len(speed_history) > 1 and speed_history[0][0] < now - WINDOW_SECONDS:
+                speed_history.popleft()
 
-            # Tatsächlich noch verbleibende Bilder ohne bereits gecachte Bilder
+            t_old, count_old = speed_history[0]
+            dt = now - t_old
+            dp = count_processed - count_old
+            speed = (dp / dt) if dt > 0 else 0.0
+
+            # Restbilder ohne bereits erledigte/gecachte Dateien
             remaining_to_process = count_total - idx
+
             if speed > 0 and remaining_to_process > 0:
                 remaining_sec = remaining_to_process / speed
                 eta_str = time.strftime("%H:%M:%S", time.localtime(now + remaining_sec))
