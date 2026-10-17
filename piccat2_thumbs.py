@@ -79,7 +79,8 @@ def main():
 
                     if caught_warnings:
                         for w in caught_warnings:
-                            print(f"\n[EXIF-WARNUNG] {src_file}: {w.message}")
+                            # Zeile bereinigen, damit die Fortschrittsanzeige nicht zerschossen wird
+                            print(f"\r{' ' * 100}\r[EXIF-WARNUNG] {src_file}: {w.message}")
 
                 count_processed += 1
 
@@ -91,10 +92,17 @@ def main():
         if now - last_print >= 2.0:
             elapsed = now - t_start
             pct = (idx / count_total * 100.0) if count_total > 0 else 0.0
-            speed = idx / elapsed if elapsed > 0 else 0.0
-            if speed > 0:
-                remaining_sec = (count_total - idx) / speed
+
+            # Geschwindigkeit nur anhand tatsächlich neu verarbeiteter Bilder ermitteln
+            speed = (count_processed / elapsed) if elapsed > 0 else 0.0
+
+            # Tatsächlich noch verbleibende Bilder ohne bereits gecachte Bilder
+            remaining_to_process = count_total - idx
+            if speed > 0 and remaining_to_process > 0:
+                remaining_sec = remaining_to_process / speed
                 eta_str = time.strftime("%H:%M:%S", time.localtime(now + remaining_sec))
+            elif remaining_to_process == 0:
+                eta_str = time.strftime("%H:%M:%S", time.localtime(now))
             else:
                 eta_str = "--:--:--"
 
@@ -108,7 +116,7 @@ def main():
     # Zeilenumbruch nach dem interaktiven Fortschritt
     print()
 
-    # 3. Abschluss-Zusammenfassung (maximal 10 Zeilen)
+    # 3. Abschluss-Zusammenfassung (exakt 10 Zeilen)
     t_end = time.time()
     end_str = time.strftime("%H:%M:%S", time.localtime(t_end))
     total_sec = t_end - t_start
